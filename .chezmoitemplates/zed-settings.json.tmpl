@@ -1,9 +1,29 @@
 {
+  "project_panel": {
+    "dock": "left",
+    "default_width": 360.0
+  },
+  "outline_panel": {
+    "dock": "left",
+    "default_width": 360.0
+  },
+  "collaboration_panel": {
+    "dock": "left",
+    "default_width": 360.0
+  },
   "git_panel": {
-    "dock": "left"
+    "dock": "left",
+    "default_width": 360.0
   },
   "cli_default_open_behavior": "existing_window",
+  "telemetry": {
+    "diagnostics": true,
+    "metrics": false,
+    "anthropic_retention": false
+  },
   "agent": {
+    "dock": "right",
+    "default_width": 500.0,
     "sidebar_side": "right",
     "default_profile": "ask",
     "default_model": {
@@ -12,7 +32,6 @@
       "enable_thinking": true,
       "effort": "high"
     },
-    "dock": "right",
     "favorite_models": [
       {
         "provider": "copilot_chat",
@@ -47,10 +66,6 @@
     ],
     "model_parameters": []
   },
-  "project_panel": {
-    "default_width": 300.0,
-    "dock": "left"
-  },
   "buffer_line_height": "comfortable",
   "buffer_font_weight": 400.0,
   "buffer_font_family": "Inconsolata",
@@ -60,5 +75,32 @@
     "mode": "system",
     "light": "One Light",
     "dark": "One Dark",
+  },
+  "file_types": {
+    "Ansible": [
+      "**.ansible.yml",
+      "**.ansible.yaml",
+      "**/inventories/*.yml",
+      "**/inventories/*.yaml",
+      "**/defaults/*.yml",
+      "**/defaults/*.yaml",
+      "**/meta/*.yml",
+      "**/meta/*.yaml",
+      "**/tasks/*.yml",
+      "**/tasks/*.yaml",
+      "**/handlers/*.yml",
+      "**/handlers/*.yaml",
+      "**/group_vars/*.yml",
+      "**/group_vars/*.yaml",
+      "**/playbooks/*.yml",
+      "**/playbooks/*.yaml",
+      "**playbook*.yml",
+      "**playbook*.yaml",
+      "**provision*.yml",
+      "**provision*.yaml"
+    ],
+    "Gotmpl": [
+      "**.tmpl"
+    ]
   },
 }
