@@ -57,7 +57,7 @@ source /usr/share/fzf/shell/key-bindings.zsh
 eval "$(starship init zsh)"
 eval "$(zoxide init zsh)"
 {{ if (contains "WSL" .chezmoi.kernel.osrelease) -}}
-eval $(keychain --eval --quiet ~/.ssh/id_ed25519)
+eval $(keychain add --eval --quick --quiet ~/.ssh/id_ed25519)
 {{- end }}
 
 ZSH_HIGHLIGHT_STYLES[path]='none'
