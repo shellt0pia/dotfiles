@@ -18,10 +18,12 @@ OneDrive - VINCI Energies/**
 {{ if (contains "WSL" .chezmoi.kernel.osrelease) }}
 .chezmoiscripts/linux/native/**
 .config/systemd/user/toolbox*
+.config/zed
+.config/zed/**
 .local/bin/gnome*
 .local/bin/toolbox*
-.local/share/icons/vscode.png
-.local/share/applications/code*
+.local/share/icons/**
+.local/share/applications/**
 {{ end }}
 {{ else }}
 .chezmoiscripts/linux/**
@@ -32,10 +34,10 @@ OneDrive - VINCI Energies/**
 .bashrc.d/**
 .config/environment.d
 .config/environment.d/**
-.config/Code
-.config/Code/**
 .config/systemd
 .config/systemd/**
+.config/zed
+.config/zed/**
 .gnupg
 .gnupg/**
 .local
