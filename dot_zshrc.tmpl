@@ -72,6 +72,7 @@ export SSL_CERT_FILE=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem
 export VAGRANT_WSL_ENABLE_WINDOWS_ACCESS="1"
 {{ end -}}
 
+# Fix programs not respecting the XDG specification
 {{ if (contains "WSL" .chezmoi.kernel.osrelease) -}}
-alias podman="podman-remote"
+export ANSIBLE_CONFIG=$XDG_CONFIG_HOME/ansible/ansible.cfg
 {{ end -}}

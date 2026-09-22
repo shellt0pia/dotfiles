@@ -1,0 +1,6 @@
+{{- $sitePackages := "" -}}
+{{- with (glob (joinPath .chezmoi.homeDir ".local/share/pipx/venvs/ansible-dev-tools/lib/python*/site-packages")) -}}
+{{-   $sitePackages = last . -}}
+{{- end -}}
+[defaults]
+collections_path = ~/.ansible/collections{{ if $sitePackages }}:{{ $sitePackages }}{{ end }}

@@ -12,6 +12,8 @@ OneDrive - VINCI Energies/**
 {{ end }}
 {{ if not (contains "WSL" .chezmoi.kernel.osrelease) }}
 .chezmoiscripts/linux/wsl/**
+.config/ansible
+.config/ansible/**
 .config/.gnupg/gpg-agent.conf
 .ssh/aws-ssm-ssh-proxy-command.sh
 {{ end }}
@@ -32,6 +34,8 @@ OneDrive - VINCI Energies/**
 {{ if eq .chezmoi.os "windows" }}
 .bashrc.d
 .bashrc.d/**
+.config/ansible
+.config/ansible/**
 .config/environment.d
 .config/environment.d/**
 .config/systemd
