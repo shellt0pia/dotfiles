@@ -112,7 +112,7 @@
         },
 {{- if eq .chezmoi.os "windows" }}
         "python": {
-          {{/* .chezmoi.username on windows is "DOMAIN\\Username" and it corresponds to "username" on WSL */}}
+          {{- /* .chezmoi.username on windows is "DOMAIN\\Username" and it corresponds to "username" on WSL */}}
           "interpreterPath": "/home/{{ .chezmoi.username | splitList "\\" | last | lower }}/.local/share/pipx/venvs/ansible-dev-tools/bin/python"
         },
 {{- end }}
