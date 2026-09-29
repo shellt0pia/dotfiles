@@ -11,5 +11,4 @@ if (Test-Path($ChocolateyProfile)) {
 
 New-Alias ll Get-ChildItem
 
-Set-Location $env:USERPROFILE
 Clear-Host
