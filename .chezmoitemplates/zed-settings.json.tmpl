@@ -1,4 +1,7 @@
 {
+  "status_bar": {
+    "line_endings_button": true
+  },
   "project_panel": {
     "dock": "left",
     "default_width": 360.0
@@ -13,35 +16,29 @@
   },
   "git_panel": {
     "dock": "left",
-    "default_width": 360.0
+    "default_width": 360.0,
+    "group_by": "staging",
+    "tree_view": true
   },
   "edit_predictions": {
     "provider": "copilot"
   },
   "cli_default_open_behavior": "existing_window",
-  "telemetry": {
-    "diagnostics": true,
-    "metrics": false,
-    "anthropic_retention": false
-  },
   "agent": {
     "dock": "right",
     "default_width": 500.0,
     "sidebar_side": "right",
     "default_profile": "ask",
+    "auto_compact": {
+      "threshold": "90%"
+    },
     "default_model": {
       "provider": "copilot_chat",
-      "model": "mai-code-1.1-flash",
+      "model": "claude-sonnet-5.5",
       "enable_thinking": true,
       "effort": "high"
     },
     "favorite_models": [
-      {
-        "provider": "copilot_chat",
-        "model": "claude-opus-5",
-        "enable_thinking": true,
-        "effort": "high"
-      },
       {
         "provider": "copilot_chat",
         "model": "claude-fable-5",
@@ -50,7 +47,13 @@
       },
       {
         "provider": "copilot_chat",
-        "model": "claude-sonnet-5",
+        "model": "claude-opus-5.5",
+        "enable_thinking": true,
+        "effort": "high"
+      },
+      {
+        "provider": "copilot_chat",
+        "model": "claude-sonnet-5.5",
         "enable_thinking": true,
         "effort": "high"
       },
@@ -65,20 +68,62 @@
         "model": "mai-code-1.1-flash",
         "enable_thinking": true,
         "effort": "high"
-      }
+      },
     ],
     "model_parameters": []
   },
   "buffer_line_height": "comfortable",
   "buffer_font_weight": 400.0,
   "buffer_font_family": "Inconsolata",
+{{- if eq .environment "home" }}
   "ui_font_size": 20.0,
   "buffer_font_size": 20.0,
   "agent_buffer_font_size": 20.0,
+{{- else if eq .environment "work" }}
+  "ui_font_size": 18.0,
+  "buffer_font_size": 18.0,
+  "agent_buffer_font_size": 18.0,
+{{- end }}
+  "icon_theme": {
+    "mode": "system",
+    "light": "Zed (Default)",
+    "dark": "Zed (Default)"
+  },
+  "telemetry": {
+    "diagnostics": true,
+    "metrics": false,
+    "anthropic_retention": false
+  },
   "theme": {
     "mode": "system",
     "light": "One Light",
     "dark": "One Dark"
+  },
+  "languages": {
+    "Ansible": {
+      "semantic_tokens": "combined"
+    }
+  },
+  "lsp": {
+    "ansible": {
+      "settings": {
+        "executionEnvironment": {
+          "enabled": false
+        },
+{{- if eq .chezmoi.os "windows" }}
+        "python": {
+          {{/* .chezmoi.username on windows is "DOMAIN\\Username" and it corresponds to "username" on WSL */}}
+          "interpreterPath": "/home/{{ .chezmoi.username | splitList "\\" | last | lower }}/.local/share/pipx/venvs/ansible-dev-tools/bin/python"
+        },
+{{- end }}
+        "validation": {
+          "enabled": true,
+          "lint": {
+            "enabled": true,
+          }
+        }
+      }
+    }
   },
   "file_types": {
     "Ansible": [
