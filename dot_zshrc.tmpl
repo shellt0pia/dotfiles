@@ -67,7 +67,9 @@ export PAGER=less
 export BROWSER={{ if not (contains "WSL" .chezmoi.kernel.osrelease) }}firefox{{ else }}/mnt/c/Program\ Files/Google\Chrome/Application/chrome.exe{{ end }}
 
 {{ if (contains "WSL" .chezmoi.kernel.osrelease) -}}
-export WINHOME=/mnt/c/Users/{{ .chezmoi.username }}
+export WINUSERPROFILE=/mnt/c/Users/{{ .chezmoi.username }}
+export WINAPPDATA=/mnt/c/Users/{{ .chezmoi.username }}/AppData/Roaming
+export WINLOCALAPPDATA=/mnt/c/Users/{{ .chezmoi.username }}/AppData/Local
 export NODE_EXTRA_CA_CERTS=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem
 export SSL_CERT_FILE=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem
 export VAGRANT_WSL_ENABLE_WINDOWS_ACCESS="1"
