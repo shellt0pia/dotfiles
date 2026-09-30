@@ -64,7 +64,7 @@ ZSH_HIGHLIGHT_STYLES[path]='none'
 
 export EDITOR=vim
 export PAGER=less
-export BROWSER={{ if not (contains "WSL" .chezmoi.kernel.osrelease) }}firefox{{ else }}/mnt/c/Program\ Files/Firefox\ Developer\ Edition/firefox.exe{{ end }}
+export BROWSER={{ if not (contains "WSL" .chezmoi.kernel.osrelease) }}firefox{{ else }}/mnt/c/Program\ Files/Google\Chrome/Application/chrome.exe{{ end }}
 
 {{ if (contains "WSL" .chezmoi.kernel.osrelease) -}}
 export WINHOME=/mnt/c/Users/{{ .chezmoi.username }}
