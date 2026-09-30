@@ -76,5 +76,5 @@ export SSL_CERT_FILE=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem
 
 # Fix programs not respecting the XDG specification
 {{ if (contains "WSL" .chezmoi.kernel.osrelease) -}}
-export ANSIBLE_CONFIG=$XDG_CONFIG_HOME/ansible/ansible.cfg
+export ANSIBLE_CONFIG=${XDG_CONFIG_HOME:-${HOME}/.config}/ansible/ansible.cfg
 {{ end -}}
