@@ -4,3 +4,4 @@
 {{- end -}}
 [defaults]
 collections_path = ~/.ansible/collections{{ if $sitePackages }}:{{ $sitePackages }}{{ end }}
+collections_scan_sys_path = false
