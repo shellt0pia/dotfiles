@@ -24,7 +24,7 @@
 {{- end }}
 {{- if (and (eq .chezmoi.os "linux") (contains "WSL" .chezmoi.kernel.osrelease)) -}}
 [credential]
-	helper = /mnt/c/Program\\ Files/Git/mingw64/bin/git-credential-manager.exe
+	helper = /mnt/c/Users/{{ .chezmoi.username }}/AppData/Local/Programs/Git/mingw64/bin/git-credential-manager.exe
 {{- end }}
 {{- if eq .chezmoi.os "windows" }}
 [http]
