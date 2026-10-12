@@ -2,7 +2,9 @@
 Host *
 	IdentityAgent ~/.1password/agent.sock
 {{- else if eq .environment "work" -}}
-host i-* mi-* mobility-*
+Include ~/.ansible/tmp/molecule.*/ssh_config
+
+Host i-* mi-* mobility-*
 	IdentityFile ~/.ssh/id_ed25519
 	ProxyCommand ~/.ssh/aws-ssm-ssh-proxy-command.sh %h %r %p ~/.ssh/id_ed25519.pub
 	StrictHostKeyChecking no

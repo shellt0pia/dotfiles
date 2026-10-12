@@ -72,7 +72,10 @@ export WINAPPDATA=/mnt/c/Users/{{ .chezmoi.username }}/AppData/Roaming
 export WINLOCALAPPDATA=/mnt/c/Users/{{ .chezmoi.username }}/AppData/Local
 export NODE_EXTRA_CA_CERTS=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem
 export SSL_CERT_FILE=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem
-{{ end -}}
+export REQUESTS_CA_BUNDLE=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem
+
+alias molecule='PATH="$(printf %s "$PATH" | tr ":" "\n" | grep -v "^/mnt/c/" | paste -sd:)" molecule'
+{{- end }}
 
 # Fix programs not respecting the XDG specification
 {{ if (contains "WSL" .chezmoi.kernel.osrelease) -}}
