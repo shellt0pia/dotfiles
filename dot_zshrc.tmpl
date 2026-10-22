@@ -53,11 +53,14 @@ compinit
 source /usr/share/zsh-autosuggestions/zsh-autosuggestions.zsh
 source /usr/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
 source /usr/share/fzf/shell/key-bindings.zsh
+source ~/.config/zsh/opsa.zsh
 
 eval "$(starship init zsh)"
 eval "$(zoxide init zsh)"
 eval "$(mise activate zsh)"
-{{ if (contains "WSL" .chezmoi.kernel.osrelease) -}}
+{{- if not (contains "WSL" .chezmoi.kernel.osrelease) }}
+eval "$(op completion zsh)"
+{{ else }}
 eval $(keychain add --eval --quick --quiet ~/.ssh/id_ed25519)
 {{- end }}
 
