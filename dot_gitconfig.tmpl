@@ -9,17 +9,11 @@
 	path = ~/.config/git/personal
 [includeIf "gitdir:{{ .chezmoi.homeDir }}/git/work/"]
 	path = ~/.config/git/work
-[includeIf "gitdir:/mnt/c/Users/{{ .chezmoi.username }}/OneDrive - {{ .workOneDriveName }}/Documents/PowerShell/"]
-	path = ~/.config/git/personal
-[includeIf "gitdir:/mnt/c/Users/{{ .chezmoi.username }}/Git/work/"]
-	path = ~/.config/git/work
 {{ else if eq .chezmoi.os "windows" -}}
 [includeIf "gitdir:{{ .chezmoi.homeDir }}/.local/share/chezmoi/"]
 	path = ~/.config/git/personal
 [includeIf "gitdir:{{ .chezmoi.homeDir }}/OneDrive - {{ .workOneDriveName }}/Documents/PowerShell/"]
 	path = ~/.config/git/personal
-[includeIf "gitdir:{{ .chezmoi.homeDir }}/Git/work/"]
-	path = ~/.config/git/work
 {{- end }}
 {{- end }}
 {{- if (and (eq .chezmoi.os "linux") (contains "WSL" .chezmoi.kernel.osrelease)) -}}
