@@ -1,11 +1,14 @@
 [Unit]
 Description=Auto-update Fedora Toolbx from remote image
-Wants=network-online.target
-After=network-online.target
+StartLimitIntervalSec=1h
+StartLimitBurst=4
 
 [Service]
 Type=oneshot
-ExecStart=%h/.local/bin/toolbox-update
+ExecStart=%h/.local/bin/toolbox-update update
+# toolbox-update exits non-zero when the network or the registry is unreachable.
+Restart=on-failure
+RestartSec=10min
 
 [Install]
 WantedBy=default.target

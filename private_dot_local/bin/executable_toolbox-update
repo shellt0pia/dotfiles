@@ -1,109 +1,353 @@
 #!/usr/bin/env bash
+# toolbox-update: keep the Fedora toolbox in sync with its custom image. Runs on the host.
+#
+#   stage    pull the image and prepare "<name>-next" (never touches the current toolbox)
+#   swap     replace "<name>" with "<name>-next" when the toolbox is stopped or idle
+#   update   swap, stage, swap, then remove obsolete toolboxes (default, used by the timer)
+#   prepare  swap; create the toolbox if it does not exist yet (used by tbx)
+#   status   show the current state without changing anything
+#
+# A toolbox is "idle" when podman has no exec session for it (every `toolbox enter` and every
+# Ptyxis tab is one) and nothing else runs in its cgroup but the processes listed in
+# IGNORED_PROCESSES below. When in doubt, the toolbox is considered in use.
 set -euo pipefail
 
-FEDORA_VERSION=44
-CONTAINER_IMAGE="ghcr.io/shellt0pia/fedora-toolbox:${FEDORA_VERSION}"
-CONTAINER_NAME="fedora-toolbox-${FEDORA_VERSION}"
+readonly IMAGE_REPO="ghcr.io/shellt0pia/fedora-toolbox"
+FEDORA_VERSION="$(. /etc/os-release && echo "${VERSION_ID}")"
+readonly FEDORA_VERSION
+readonly CONTAINER_IMAGE="${IMAGE_REPO}:${FEDORA_VERSION}"
+readonly CONTAINER_NAME="fedora-toolbox-${FEDORA_VERSION}"
+readonly NEXT_NAME="${CONTAINER_NAME}-next"
+readonly LOCK_FILE="${XDG_RUNTIME_DIR:-/tmp}/toolbox-update.lock"
+readonly PULL_TIMEOUT="30m"
+
+# The lock is held on fd 9: close it for external commands so that a long-lived helper
+# (e.g. podman's rootless pause process) can never keep the lock after we exit.
+podman() { /usr/bin/podman "$@" 9>&-; }
+toolbox() { /usr/bin/toolbox "$@" 9>&-; }
+
+log() { printf '%s\n' "$*"; }
+
+interactive() { [[ -t 1 ]]; }
+
+notify() {
+  if interactive; then
+    return 0
+  fi
+  /usr/bin/notify-send --app-name="toolbox-update" --icon=applications-utilities "$1" "$2" >/dev/null 2>&1 || true
+}
+
+# Notify only once per key, so that a deferred swap does not nag every 2 hours.
+notify_once() {
+  local key="$1" title="$2" body="$3" state_dir state_file
+  if interactive; then
+    return 0
+  fi
+  state_dir="${XDG_STATE_HOME:-${HOME}/.local/state}/toolbox-update"
+  state_file="${state_dir}/last-notification"
+  if [[ "$(cat "${state_file}" 2>/dev/null || true)" == "${key}" ]]; then
+    return 0
+  fi
+  mkdir -p "${state_dir}" 2>/dev/null && printf '%s\n' "${key}" >"${state_file}" 2>/dev/null || true
+  notify "${title}" "${body}"
+}
 
 metered_network_connection() {
   local status
-  status=$(/usr/bin/busctl get-property --json=short org.freedesktop.NetworkManager /org/freedesktop/NetworkManager org.freedesktop.NetworkManager Metered | /usr/bin/jq .data)
+  status="$(/usr/bin/busctl get-property --json=short org.freedesktop.NetworkManager /org/freedesktop/NetworkManager org.freedesktop.NetworkManager Metered | /usr/bin/jq -r .data)" || return 1
   # https://networkmanager.dev/docs/api/latest/nm-dbus-types.html#NMMetered
-  case ${status} in
-    1|3) return 0 ;;
-    2|4) return 1 ;;
-    0|*) return 1 ;;
+  case "${status}" in
+    1 | 3) return 0 ;;
+    *) return 1 ;;
   esac
 }
 
 container_exists() {
-  /usr/bin/podman container exists "${CONTAINER_NAME}"
+  podman container exists "$1"
 }
 
 container_running() {
-  [[ "$(/usr/bin/podman inspect -f '{{.State.Running}}' "${CONTAINER_NAME}" 2>/dev/null || echo false)" == "true" ]]
+  [[ "$(podman container inspect --format '{{.State.Running}}' "$1" 2>/dev/null || echo false)" == "true" ]]
 }
 
-container_process_count() {
-  local count
-  count=$(/usr/bin/pgrep --cgroup "$(/usr/bin/systemctl --user show --property ControlGroup --value "libpod-$(/usr/bin/podman inspect --format '{{.Id}}' ${CONTAINER_NAME}).scope")/container" | wc -l)
-  echo "${count:-0}"
+container_id() {
+  podman container inspect --format '{{.Id}}' "$1" 2>/dev/null || true
 }
 
-local_image_digest() {
-  /usr/bin/podman image inspect --format '{{.Digest}}' "${CONTAINER_IMAGE}" 2>/dev/null || true
+container_image_id() {
+  podman container inspect --format '{{.Image}}' "$1" 2>/dev/null || true
 }
 
-remote_image_digest() {
-  /usr/bin/skopeo inspect --format '{{.Digest}}' "docker://${CONTAINER_IMAGE}" 2>/dev/null || true
+image_id() {
+  podman image inspect --format '{{.Id}}' "$1" 2>/dev/null || true
 }
 
-stop_and_remove_toolbox() {
-  if container_running; then
-    echo "Stopping running toolbox: ${CONTAINER_NAME}"
-    /usr/bin/toolbox stop "${CONTAINER_NAME}" || true
+container_exec_sessions() {
+  podman container inspect --format '{{len .ExecIDs}}' "$1" 2>/dev/null
+}
+
+# Count the processes of the toolbox cgroup other than the ones that are always there.
+# `podman top` cannot be used: the toolbox runs with --pid host and lists the whole system.
+container_extra_processes() {
+  local name="$1" cgroup procs_file pid args count=0
+  cgroup="$(podman container inspect --format '{{.State.CgroupPath}}' "${name}" 2>/dev/null)" || return 1
+  [[ -n "${cgroup}" ]] || return 1
+  procs_file="/sys/fs/cgroup${cgroup}/container/cgroup.procs"
+  [[ -r "${procs_file}" ]] || return 1
+  while read -r pid; do
+    args="$(tr '\0' ' ' 2>/dev/null <"/proc/${pid}/cmdline")" || continue
+    [[ -n "${args}" ]] || continue
+    case "${args}" in
+      # IGNORED_PROCESSES: entrypoint of the toolbox and the 1Password CLI daemon.
+      toolbox\ *init-container\ * | "op daemon "*) ;;
+      *) count=$((count + 1)) ;;
+    esac
+  done <"${procs_file}"
+  echo "${count}"
+}
+
+container_is_idle() {
+  local name="$1" sessions extra
+  if ! sessions="$(container_exec_sessions "${name}")" || [[ ! "${sessions}" =~ ^[0-9]+$ ]]; then
+    log "Cannot count the exec sessions of '${name}'; assuming it is in use."
+    return 1
   fi
-  echo "Removing toolbox: ${CONTAINER_NAME}"
-  /usr/bin/toolbox rm -f "${CONTAINER_NAME}" || true
+  if ((sessions > 0)); then
+    log "'${name}' has ${sessions} active session(s)."
+    return 1
+  fi
+  if ! extra="$(container_extra_processes "${name}")" || [[ ! "${extra}" =~ ^[0-9]+$ ]]; then
+    log "Cannot list the processes of '${name}'; assuming it is in use."
+    return 1
+  fi
+  if ((extra > 0)); then
+    log "'${name}' still runs ${extra} process(es) outside of any session."
+    return 1
+  fi
+  return 0
 }
 
-create_toolbox() {
-  echo "Pulling new image from registry: '${CONTAINER_IMAGE}'"
-  /usr/bin/podman pull "${CONTAINER_IMAGE}"
-  echo "Creating toolbox container '${CONTAINER_NAME}' from image '${CONTAINER_IMAGE}'"
-  /usr/bin/toolbox create --assumeyes --image "${CONTAINER_IMAGE}" --container "${CONTAINER_NAME}"
-  echo "Container '${CONTAINER_NAME}' created. It will be used on next 'toolbox enter'."
+cmd_stage() {
+  local force="${1:-}" new_image current_image
+
+  if [[ "${force}" != "force" ]] && metered_network_connection; then
+    log "Detected metered network connection. Skipping stage."
+    return 0
+  fi
+
+  if [[ -x /usr/bin/nm-online ]] && ! /usr/bin/nm-online --quiet --timeout=60; then
+    log "No network connectivity. Will retry later."
+    return 1
+  fi
+
+  log "Pulling image '${CONTAINER_IMAGE}'"
+  if ! /usr/bin/timeout "${PULL_TIMEOUT}" /usr/bin/podman pull --quiet "${CONTAINER_IMAGE}" 9>&-; then
+    log "Pull failed. Nothing was changed."
+    return 1
+  fi
+
+  new_image="$(image_id "${CONTAINER_IMAGE}")"
+  if [[ -z "${new_image}" ]]; then
+    log "Cannot determine the ID of the pulled image. Nothing was changed."
+    return 1
+  fi
+
+  if container_exists "${CONTAINER_NAME}"; then
+    current_image="$(container_image_id "${CONTAINER_NAME}")"
+    if [[ "${current_image}" == "${new_image}" ]]; then
+      log "'${CONTAINER_NAME}' already uses the latest image."
+      if container_exists "${NEXT_NAME}"; then
+        log "Discarding redundant '${NEXT_NAME}'."
+        toolbox rm --force "${NEXT_NAME}" || true
+      fi
+      return 0
+    fi
+  fi
+
+  if container_exists "${NEXT_NAME}"; then
+    if [[ "$(container_image_id "${NEXT_NAME}")" == "${new_image}" ]]; then
+      log "'${NEXT_NAME}' is already staged with the latest image."
+      return 0
+    fi
+    log "Discarding outdated '${NEXT_NAME}'."
+    if ! toolbox rm --force "${NEXT_NAME}"; then
+      log "Cannot remove outdated '${NEXT_NAME}'."
+      return 1
+    fi
+  fi
+
+  log "Creating '${NEXT_NAME}' from '${CONTAINER_IMAGE}'"
+  if ! toolbox create --assumeyes --image "${CONTAINER_IMAGE}" --container "${NEXT_NAME}"; then
+    log "Cannot create '${NEXT_NAME}'."
+    return 1
+  fi
+  log "'${NEXT_NAME}' is staged."
+}
+
+cmd_swap() {
+  local old_image=""
+
+  if ! container_exists "${NEXT_NAME}"; then
+    log "Nothing staged. Nothing to swap."
+    return 0
+  fi
+
+  if container_exists "${CONTAINER_NAME}"; then
+    old_image="$(container_image_id "${CONTAINER_NAME}")"
+    if [[ -n "${old_image}" && "${old_image}" == "$(container_image_id "${NEXT_NAME}")" ]]; then
+      log "'${NEXT_NAME}' uses the same image as '${CONTAINER_NAME}'; discarding it."
+      toolbox rm --force "${NEXT_NAME}" || true
+      return 0
+    fi
+
+    if container_running "${CONTAINER_NAME}" && ! container_is_idle "${CONTAINER_NAME}"; then
+      log "Swap deferred: '${CONTAINER_NAME}' is in use."
+      notify_once "deferred-$(container_id "${NEXT_NAME}")" \
+        "Toolbox update ready" \
+        "It will replace '${CONTAINER_NAME}' as soon as no terminal uses it."
+      return 0
+    fi
+
+    log "Removing toolbox '${CONTAINER_NAME}'"
+    if ! toolbox rm --force "${CONTAINER_NAME}"; then
+      log "Cannot remove '${CONTAINER_NAME}'. Keeping '${NEXT_NAME}' staged."
+      return 1
+    fi
+  fi
+
+  log "Renaming '${NEXT_NAME}' to '${CONTAINER_NAME}'"
+  if ! podman rename "${NEXT_NAME}" "${CONTAINER_NAME}"; then
+    log "Cannot rename '${NEXT_NAME}'. It stays staged and the next run will retry."
+    return 1
+  fi
+
+  if [[ -n "${old_image}" ]] && podman rmi "${old_image}" >/dev/null 2>&1; then
+    log "Removed the previous image ${old_image:0:12}."
+  fi
+
+  log "'${CONTAINER_NAME}' now runs the latest image."
+  notify "Toolbox updated" "'${CONTAINER_NAME}' now runs the latest image. New terminals will use it."
+}
+
+# Remove the toolboxes (and images) of previous Fedora versions: the image is rebuilt daily,
+# nothing in them is meant to be kept.
+cmd_prune_obsolete() {
+  local name version
+
+  if [[ ! "${FEDORA_VERSION}" =~ ^[0-9]+$ ]]; then
+    return 0
+  fi
+
+  while read -r name; do
+    if [[ ! "${name}" =~ ^fedora-toolbox-([0-9]+)(-next)?$ ]]; then
+      continue
+    fi
+    version="${BASH_REMATCH[1]}"
+    # Only older versions: after a rollback, the newer toolbox must not be removed.
+    if ((version >= FEDORA_VERSION)); then
+      continue
+    fi
+    if container_running "${name}" && ! container_is_idle "${name}"; then
+      log "Keeping obsolete toolbox '${name}': it is in use."
+      continue
+    fi
+    log "Removing obsolete toolbox '${name}'"
+    toolbox rm --force "${name}" || true
+    podman rmi "${IMAGE_REPO}:${version}" >/dev/null 2>&1 || true
+  done < <(podman ps --all --filter label=com.github.containers.toolbox=true --format '{{.Names}}')
+}
+
+cmd_update() {
+  local rc=0
+  # Local only: promote a toolbox staged earlier as soon as possible (e.g. right after login).
+  cmd_swap || rc=$?
+  cmd_stage || rc=$?
+  cmd_swap || rc=$?
+  if container_exists "${CONTAINER_NAME}"; then
+    cmd_prune_obsolete || true
+  fi
+  return "${rc}"
+}
+
+cmd_prepare() {
+  cmd_swap || true
+  if ! container_exists "${CONTAINER_NAME}"; then
+    log "Toolbox '${CONTAINER_NAME}' does not exist yet; creating it."
+    cmd_stage force || return 1
+    cmd_swap || return 1
+  fi
+  container_exists "${CONTAINER_NAME}"
+}
+
+describe_container() {
+  local name="$1" image sessions extra
+
+  if ! container_exists "${name}"; then
+    log "  ${name}: absent"
+    return 0
+  fi
+  image="$(container_image_id "${name}")"
+  log "  ${name}: image ${image:0:12}"
+  if container_running "${name}"; then
+    sessions="$(container_exec_sessions "${name}" || echo '?')"
+    extra="$(container_extra_processes "${name}" || echo '?')"
+    log "    running, exec sessions: ${sessions}, other processes: ${extra}"
+    if container_is_idle "${name}" >/dev/null; then
+      log "    idle: yes"
+    else
+      log "    idle: no"
+    fi
+  else
+    log "    stopped"
+  fi
+}
+
+cmd_status() {
+  local local_image
+  local_image="$(image_id "${CONTAINER_IMAGE}")"
+  log "Image: ${CONTAINER_IMAGE} (local: ${local_image:0:12})"
+  describe_container "${CONTAINER_NAME}"
+  describe_container "${NEXT_NAME}"
+  if metered_network_connection; then
+    log "Network: metered"
+  else
+    log "Network: not metered"
+  fi
+}
+
+usage() {
+  log "Usage: ${0##*/} [stage|swap|update|prepare|status]"
 }
 
 main() {
-  echo "-- Toolbox auto-update started for container '${CONTAINER_NAME}' using image '${CONTAINER_IMAGE}'"
+  local command="${1:-update}"
 
-  if metered_network_connection; then
-    echo "Detected metered network connection. Skipping update."
+  case "${command}" in
+    stage | swap | update | prepare | status) ;;
+    *)
+      usage >&2
+      exit 2
+      ;;
+  esac
+
+  log "-- toolbox-update ${command}: '${CONTAINER_NAME}' from '${CONTAINER_IMAGE}'"
+
+  if [[ "${command}" == "status" ]]; then
+    cmd_status
     exit 0
   fi
 
-  if container_exists; then
-    local local_digest remote_digest
-    local_digest="$(local_image_digest || true)"
-    remote_digest="$(remote_image_digest || true)"
-
-    if [[ -n "${local_digest}" && -n "${remote_digest}" && "${local_digest}" == "${remote_digest}" ]]; then
-      echo "Image is already up-to-date (digest: ${remote_digest}). Nothing to do."
-      exit 0
+  exec 9>"${LOCK_FILE}"
+  if ! /usr/bin/flock --nonblock 9; then
+    log "Another toolbox-update is running."
+    if [[ "${command}" == "prepare" ]]; then
+      container_exists "${CONTAINER_NAME}"
+      exit $?
     fi
-
-    if [[ -z "${remote_digest}" ]]; then
-      echo "Could not determine new image digest; proceeding cautiously."
-    else
-      echo "New image digest detected: ${remote_digest} (previous: ${local_digest:-none})."
-    fi
-
-    if container_running; then
-      local processes
-      processes="$(container_process_count || echo 2)" # be conservative if check fails
-      if [[ "${processes}" -gt 1 ]]; then
-        echo "Toolbox is actively used. Skipping update."
-        exit 0
-      else
-        echo "Toolbox is idle. Proceeding to stop & update."
-        stop_and_remove_toolbox
-        create_toolbox
-      fi
-    else
-      echo "Container exists but is not running. Recreating toolbox with the new image."
-      stop_and_remove_toolbox
-      create_toolbox
-    fi
-  else
-    echo "Container does not exist. Creating toolbox from the image."
-    create_toolbox
+    exit 0
   fi
 
-  echo "Pruning dangling images."
-  /usr/bin/podman image prune -f >/dev/null 2>&1 || true
-
-  echo "-- Toolbox auto-update finished"
+  "cmd_${command}"
 }
 
 main "$@"

@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# tbx: `toolbox enter`, after applying a staged toolbox update if nothing is using the toolbox.
+set -euo pipefail
+
+if [[ -f /run/.toolboxenv ]]; then
+  echo "tbx: already inside a toolbox." >&2
+  exit 1
+fi
+
+if ! "${HOME}/.local/bin/toolbox-update" prepare; then
+  echo "tbx: the toolbox is not ready (an update may be in progress). Try again in a moment." >&2
+  exit 1
+fi
+
+exec /usr/bin/toolbox enter "$@"

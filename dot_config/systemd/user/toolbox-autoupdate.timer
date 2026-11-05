@@ -2,7 +2,7 @@
 Description=Periodic auto-update of Fedora Toolbx container
 
 [Timer]
-OnStartupSec=1m
+OnStartupSec=30s
 OnUnitActiveSec=2h
 
 [Install]
